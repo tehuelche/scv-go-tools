@@ -14,7 +14,7 @@ func TestConnectMysqlDB_InvalidDSN(t *testing.T) {
 	expectedError := "missing \"=\" after \"invalid-dsn\" in connection info string\""
 
 	// Act
-	_, err := ConnectPostgresDB(context.Background(), "invalid-dsn")
+	_, err := ConnectMysqlDB(context.Background(), "invalid-dsn")
 
 	// Assert
 	assert.Equal(t, expectedError, err.Error())

@@ -4,10 +4,12 @@ go 1.18
 
 require (
 	github.com/DATA-DOG/go-sqlmock v1.5.0
+	github.com/go-sql-driver/mysql v1.6.0
 	github.com/golang-jwt/jwt/v4 v4.4.3
 	github.com/gorilla/context v1.1.1
 	github.com/lib/pq v1.10.7
 	github.com/pressly/goose/v3 v3.7.0
+	github.com/sijms/go-ora v1.3.2
 	github.com/stretchr/testify v1.7.1
 	go.mongodb.org/mongo-driver v1.9.1
 )
