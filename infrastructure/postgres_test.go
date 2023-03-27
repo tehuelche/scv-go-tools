@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/sergicanet9/scv-go-tools/v3/mocks"
 	"github.com/stretchr/testify/assert"
+	"github.com/tehuelche/scv-go-tools/v3/mocks"
 )
 
 // TestConnectPostgresDB_InvalidDSN checks that ConnectPostgresDB returns an error when an invalid DSN is provided

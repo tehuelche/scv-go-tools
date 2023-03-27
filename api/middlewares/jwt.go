@@ -7,8 +7,8 @@ import (
 
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/gorilla/context"
-	"github.com/sergicanet9/scv-go-tools/v3/api/utils"
-	"github.com/sergicanet9/scv-go-tools/v3/wrappers"
+	"github.com/tehuelche/scv-go-tools/v3/api/utils"
+	"github.com/tehuelche/scv-go-tools/v3/wrappers"
 )
 
 // JWT is a middleware function to check the authorization JWT Bearer token header of the request

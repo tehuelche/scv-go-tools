@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sergicanet9/scv-go-tools/v3/wrappers"
 	"github.com/stretchr/testify/assert"
+	"github.com/tehuelche/scv-go-tools/v3/wrappers"
 )
 
 type targetType struct {

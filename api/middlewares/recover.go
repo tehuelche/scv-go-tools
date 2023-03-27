@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/sergicanet9/scv-go-tools/v3/api/utils"
+	"github.com/tehuelche/scv-go-tools/v3/api/utils"
 )
 
 // Recover is a middleware function to defer and return an error response in case of panic during the handler execution

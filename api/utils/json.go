@@ -11,7 +11,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/sergicanet9/scv-go-tools/v3/wrappers"
+	"github.com/tehuelche/scv-go-tools/v3/wrappers"
 )
 
 // ResponseJSON makes the response with payload as json format

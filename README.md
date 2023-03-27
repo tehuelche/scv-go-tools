@@ -1,7 +1,7 @@
 # scv-go-tools v3
-![CI](https://github.com/sergicanet9/scv-go-tools/actions/workflows/ci.yml/badge.svg)
+![CI](https://github.com/tehuelche/scv-go-tools/actions/workflows/ci.yml/badge.svg)
 ![Coverage](https://img.shields.io/badge/Coverage-100.0%25-brightgreen)
-[![Go Reference](https://pkg.go.dev/badge/github.com/sergicanet9/scv-go-tools/v3.svg)](https://pkg.go.dev/github.com/sergicanet9/scv-go-tools/v3)
+[![Go Reference](https://pkg.go.dev/badge/github.com/tehuelche/scv-go-tools/v3.svg)](https://pkg.go.dev/github.com/tehuelche/scv-go-tools/v3)
 
 Tools for building REST APIs in Go.
 
@@ -19,7 +19,7 @@ Tools for building REST APIs in Go.
 2. Execute:
 ```
 go mod init github.com/{username}/{repository_name}
-go get github.com/sergicanet9/scv-go-tools/v3
+go get github.com/tehuelche/scv-go-tools/v3
 ```
 
 ## Run all unit tests with code coverage
@@ -33,7 +33,7 @@ make cover
 ```
 
 ## Usage examples
-[go-hexagonal-restapi](https://github.com/sergicanet9/go-hexagonal-api)
+[go-hexagonal-restapi](https://github.com/tehuelche/go-hexagonal-api)
 
 ## Author
 Sergi Canet Vela
