@@ -1,4 +1,4 @@
-module github.com/sergicanet9/scv-go-tools/v3
+module github.com/tehuelche/scv-go-tools/v3
 
 go 1.18
 
