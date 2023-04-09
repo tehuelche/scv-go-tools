@@ -3,17 +3,26 @@ package infrastructure
 import (
 	"context"
 	"database/sql"
+	"fmt"
+	"strings"
 	"time"
 
+	_ "github.com/godror/godror"
 	"github.com/pressly/goose/v3"
-	_ "github.com/sijms/go-ora"
 )
-
-// go_ora "github.com/sijms/go-ora"
 
 // ConnectOracleDB opens a connection to the OracleDB and ensures that the db is reachable
 func ConnectOracleDB(ctx context.Context, dsn string) (*sql.DB, error) {
-	db, _ := sql.Open("oracle", dsn)
+	// TODO: convert dsn to godror format
+	arguments := strings.Split(dsn, "@")
+	arguments2 := strings.Split(arguments[0], ":")
+	username := strings.Split(arguments2[1], "//")
+	password := arguments2[2]
+	connectString := arguments[1]
+
+	dsnOracle := fmt.Sprintf(`user="%s" password="%s" connectString="%s"`, username[1], password, connectString)
+
+	db, _ := sql.Open("godror", dsnOracle)
 	return db, pingOracle(ctx, db)
 }
 
