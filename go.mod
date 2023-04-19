@@ -6,7 +6,7 @@ require (
 	github.com/DATA-DOG/go-sqlmock v1.5.0
 	github.com/go-sql-driver/mysql v1.6.0
 	github.com/godror/godror v0.37.0
-	github.com/golang-jwt/jwt/v4 v4.4.3
+	github.com/golang-jwt/jwt/v5 v5.0.0
 	github.com/gorilla/context v1.1.1
 	github.com/lib/pq v1.10.7
 	github.com/pressly/goose/v3 v3.7.0

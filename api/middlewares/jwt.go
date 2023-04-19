@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/golang-jwt/jwt/v4"
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/gorilla/context"
 	"github.com/tehuelche/scv-go-tools/v3/api/utils"
 	"github.com/tehuelche/scv-go-tools/v3/wrappers"
