@@ -1,3 +1,12 @@
+//go:build oracle
+
+// The Oracle adapter needs godror, which needs CGO. Importing this package
+// otherwise pulls it into every build, and a service that never touches Oracle
+// then cannot be compiled with CGO_ENABLED=0 — which is how the images here are
+// built.
+//
+// Build with -tags oracle to include it.
+
 package infrastructure
 
 import (
