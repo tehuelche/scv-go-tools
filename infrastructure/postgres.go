@@ -34,8 +34,17 @@ func MigratePostgresDB(db *sql.DB, migrationsDir string) error {
 	return goose.Up(db, migrationsDir)
 }
 
-// PostgresRepository struct of a mongo repository
-// Needs a specific implementation of the Repository interface for every entity
+// PostgresRepository is a repository backed by PostgreSQL.
+//
+// Entities are stored as jsonb in a table with an id column, so one
+// implementation serves every entity instead of hand-written SQL per type.
+// Fields that are filtered or sorted on get generated columns and indexes in
+// the migration for that table; the repository itself does not need to know
+// about them.
 type PostgresRepository struct {
 	DB *sql.DB
+	// Table is the table holding the entity.
+	Table string
+	// Target is a zero value of the stored type, used to decode rows into it.
+	Target interface{}
 }
