@@ -53,7 +53,7 @@ func (r *PostgresRepository) Get(ctx context.Context, filter map[string]interfac
 		return nil, err
 	}
 
-	query := fmt.Sprintf("SELECT doc FROM %s%s ORDER BY id", r.table(), where)
+	query := fmt.Sprintf("SELECT id, doc FROM %s%s ORDER BY id", r.table(), where)
 	if take != nil && *take > 0 {
 		args = append(args, *take)
 		query += fmt.Sprintf(" LIMIT $%d", len(args))
@@ -90,19 +90,20 @@ func (r *PostgresRepository) Get(ctx context.Context, filter map[string]interfac
 
 // GetByID returns the entity with the given id.
 func (r *PostgresRepository) GetByID(ctx context.Context, ID string) (interface{}, error) {
-	query := fmt.Sprintf("SELECT doc FROM %s WHERE id = $1", r.table())
+	query := fmt.Sprintf("SELECT id, doc FROM %s WHERE id = $1", r.table())
 
 	row := r.DB.QueryRowContext(ctx, query, ID)
 
+	var id string
 	var payload []byte
-	if err := row.Scan(&payload); err != nil {
+	if err := row.Scan(&id, &payload); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, wrappers.NewNonExistentErr(err)
 		}
 		return nil, err
 	}
 
-	return r.decode(payload)
+	return r.decode(id, payload)
 }
 
 // Update replaces the document of the entity with the given id.
@@ -168,19 +169,37 @@ func (r *PostgresRepository) table() string {
 
 // scanEntity reads one row into a new instance of the repository's target type.
 func (r *PostgresRepository) scanEntity(rows *sql.Rows) (interface{}, error) {
+	var id string
 	var payload []byte
-	if err := rows.Scan(&payload); err != nil {
+	if err := rows.Scan(&id, &payload); err != nil {
 		return nil, err
 	}
-	return r.decode(payload)
+	return r.decode(id, payload)
 }
 
-// decode turns a stored document back into the repository's target type.
-func (r *PostgresRepository) decode(payload []byte) (interface{}, error) {
-	entry := reflect.New(reflect.TypeOf(r.Target)).Interface()
-	if err := bson.UnmarshalExtJSON(payload, false, entry); err != nil {
+// decode turns a stored row back into the repository's target type.
+//
+// The id is put back into the document before decoding. It is kept in its own
+// column so an update cannot rewrite the key it was addressed by, but an entity
+// read without its id is one nothing can be done with afterwards: no update, no
+// delete, and no reference from anything else.
+func (r *PostgresRepository) decode(id string, payload []byte) (interface{}, error) {
+	var document map[string]interface{}
+	if err := bson.UnmarshalExtJSON(payload, false, &document); err != nil {
 		return nil, err
 	}
+	document["_id"] = id
+
+	restored, err := bson.MarshalExtJSON(document, false, false)
+	if err != nil {
+		return nil, err
+	}
+
+	entry := reflect.New(reflect.TypeOf(r.Target)).Interface()
+	if err := bson.UnmarshalExtJSON(restored, false, entry); err != nil {
+		return nil, err
+	}
+
 	return entry, nil
 }
 

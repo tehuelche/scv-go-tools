@@ -338,3 +338,70 @@ func contains(haystack, needle string) bool {
 		return false
 	})()
 }
+
+// TestPostgresReadsBackTheID covers what a round trip is for: an entity read
+// without its id is one nothing can be done with afterwards — no update, no
+// delete, and no reference from anything else. The id lives in its own column,
+// so reading has to put it back.
+func TestPostgresReadsBackTheID(t *testing.T) {
+	repo := newTestRepository(t)
+	ctx := context.Background()
+
+	id, err := repo.Create(ctx, sample())
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	got, err := repo.GetByID(ctx, id)
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	if entity := got.(*sampleEntity); entity.ID != id {
+		t.Errorf("GetByID returned ID %q, want %q", entity.ID, id)
+	}
+
+	found, err := repo.Get(ctx, nil, nil, nil)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if len(found) != 1 {
+		t.Fatalf("len = %d, want 1", len(found))
+	}
+	if entity := found[0].(*sampleEntity); entity.ID != id {
+		t.Errorf("Get returned ID %q, want %q", entity.ID, id)
+	}
+}
+
+// TestPostgresUpdateAfterReadKeepsTheRow is the failure the previous test
+// guards against, end to end: read an entity, change it, write it back. With
+// the id missing from the read, the caller has nothing to address the update
+// with.
+func TestPostgresUpdateAfterReadKeepsTheRow(t *testing.T) {
+	repo := newTestRepository(t)
+	ctx := context.Background()
+
+	id, err := repo.Create(ctx, sample())
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	got, err := repo.GetByID(ctx, id)
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+
+	entity := got.(*sampleEntity)
+	entity.Name = "renamed"
+
+	if err := repo.Update(ctx, entity.ID, *entity); err != nil {
+		t.Fatalf("Update with the id that came back: %v", err)
+	}
+
+	back, err := repo.GetByID(ctx, id)
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	if back.(*sampleEntity).Name != "renamed" {
+		t.Errorf("the update did not stick: %+v", back)
+	}
+}
