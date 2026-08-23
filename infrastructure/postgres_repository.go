@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"sort"
 	"strings"
 
 	"github.com/tehuelche/scv-go-tools/v3/wrappers"
@@ -220,20 +221,169 @@ func toDocument(entity interface{}) (map[string]interface{}, error) {
 
 // containmentFilter builds the WHERE clause for a filter.
 //
-// The filter is matched with the jsonb containment operator, so a filter on a
-// field name means the same thing it meant against a document store: the
-// document contains this value at this key.
+// A plain value is matched with the jsonb containment operator, so a filter on
+// a field name means what it meant against a document store: the document
+// contains this value at this key.
+//
+// A value that is itself a map of operators — {"$nin": [...]} and the like — is
+// translated instead. The generic repository contract allows those, and
+// matching one by containment would look for a document whose field is
+// literally that object: no error, no rows, and nothing to say why.
 func containmentFilter(filter map[string]interface{}) (string, []interface{}, error) {
 	if len(filter) == 0 {
 		return "", nil, nil
 	}
 
-	payload, err := bson.MarshalExtJSON(filter, false, false)
-	if err != nil {
-		return "", nil, err
+	conditions := []string{}
+	args := []interface{}{}
+	plain := map[string]interface{}{}
+
+	// Sorted so the same filter always produces the same statement, which keeps
+	// the query plan cache useful.
+	fields := make([]string, 0, len(filter))
+	for field := range filter {
+		fields = append(fields, field)
+	}
+	sort.Strings(fields)
+
+	for _, field := range fields {
+		operators, ok := operatorMap(filter[field])
+		if !ok {
+			plain[field] = filter[field]
+			continue
+		}
+
+		condition, operatorArgs, err := operatorCondition(field, operators, len(args))
+		if err != nil {
+			return "", nil, err
+		}
+
+		conditions = append(conditions, condition)
+		args = append(args, operatorArgs...)
 	}
 
-	return " WHERE doc @> $1", []interface{}{payload}, nil
+	if len(plain) > 0 {
+		payload, err := bson.MarshalExtJSON(plain, false, false)
+		if err != nil {
+			return "", nil, err
+		}
+		args = append(args, payload)
+		conditions = append(conditions, fmt.Sprintf("doc @> $%d", len(args)))
+	}
+
+	if len(conditions) == 0 {
+		return "", nil, nil
+	}
+
+	return " WHERE " + strings.Join(conditions, " AND "), args, nil
+}
+
+// operatorMap reports whether a filter value is a set of operators rather than
+// a value to match.
+func operatorMap(value interface{}) (map[string]interface{}, bool) {
+	operators, ok := value.(map[string]interface{})
+	if !ok || len(operators) == 0 {
+		return nil, false
+	}
+
+	for key := range operators {
+		if !strings.HasPrefix(key, "$") {
+			return nil, false
+		}
+	}
+
+	return operators, true
+}
+
+// operatorCondition turns one field's operators into SQL.
+//
+// An operator with no translation is an error rather than something skipped:
+// silently dropping a condition returns rows the caller asked to exclude, which
+// is worse than failing.
+func operatorCondition(field string, operators map[string]interface{}, offset int) (string, []interface{}, error) {
+	parts := make([]string, 0, len(operators))
+	args := make([]interface{}, 0, len(operators))
+
+	names := make([]string, 0, len(operators))
+	for name := range operators {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	for _, name := range names {
+		value := operators[name]
+		position := offset + len(args) + 1
+
+		switch name {
+		case "$in", "$nin":
+			payload, err := bson.MarshalExtJSON(map[string]interface{}{"v": value}, false, false)
+			if err != nil {
+				return "", nil, err
+			}
+			args = append(args, payload)
+
+			// Membership is asked of the value as jsonb, so it holds for
+			// numbers and strings alike without the field needing a cast.
+			test := fmt.Sprintf("(doc->%s) IN (SELECT jsonb_array_elements(($%d::jsonb)->'v'))",
+				quoteLiteral(field), position)
+			if name == "$nin" {
+				test = "NOT " + test
+			}
+			parts = append(parts, test)
+
+		case "$ne":
+			payload, err := bson.MarshalExtJSON(map[string]interface{}{"v": value}, false, false)
+			if err != nil {
+				return "", nil, err
+			}
+			args = append(args, payload)
+			parts = append(parts, fmt.Sprintf("(doc->%s) IS DISTINCT FROM (($%d::jsonb)->'v')",
+				quoteLiteral(field), position))
+
+		case "$exists":
+			present, ok := value.(bool)
+			if !ok {
+				return "", nil, fmt.Errorf("$exists on %s needs a boolean", field)
+			}
+			test := fmt.Sprintf("doc ? %s", quoteLiteral(field))
+			if !present {
+				test = "NOT " + test
+			}
+			parts = append(parts, test)
+
+		case "$gt", "$gte", "$lt", "$lte":
+			payload, err := bson.MarshalExtJSON(map[string]interface{}{"v": value}, false, false)
+			if err != nil {
+				return "", nil, err
+			}
+			args = append(args, payload)
+			parts = append(parts, fmt.Sprintf("(doc->%s) %s (($%d::jsonb)->'v')",
+				quoteLiteral(field), comparison(name), position))
+
+		default:
+			return "", nil, fmt.Errorf("filter operator %s on %s has no translation", name, field)
+		}
+	}
+
+	return "(" + strings.Join(parts, " AND ") + ")", args, nil
+}
+
+func comparison(operator string) string {
+	switch operator {
+	case "$gt":
+		return ">"
+	case "$gte":
+		return ">="
+	case "$lt":
+		return "<"
+	default:
+		return "<="
+	}
+}
+
+// quoteLiteral quotes a field name for use inside a statement.
+func quoteLiteral(value string) string {
+	return "'" + strings.ReplaceAll(value, "'", "''") + "'"
 }
 
 // quoteIdentifier quotes an identifier so a table name cannot be read as SQL.

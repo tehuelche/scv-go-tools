@@ -405,3 +405,166 @@ func TestPostgresUpdateAfterReadKeepsTheRow(t *testing.T) {
 		t.Errorf("the update did not stick: %+v", back)
 	}
 }
+
+// TestPostgresFilterWithNotIn covers the operator that started this: the trip
+// service asks for a driver's trips excluding the cancelled statuses, and
+// matching {"$nin": [...]} by containment looked for a document whose field is
+// literally that object — no error, no rows, and nothing to say why.
+func TestPostgresFilterWithNotIn(t *testing.T) {
+	repo := newTestRepository(t)
+	ctx := context.Background()
+
+	for _, status := range []int{1, 5, 9} {
+		entity := sample()
+		entity.Status = status
+		if _, err := repo.Create(ctx, entity); err != nil {
+			t.Fatalf("Create: %v", err)
+		}
+	}
+
+	found, err := repo.Get(ctx, map[string]interface{}{
+		"status": map[string]interface{}{"$nin": []int{9}},
+	}, nil, nil)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+
+	if len(found) != 2 {
+		t.Fatalf("len = %d, want 2", len(found))
+	}
+	for _, entry := range found {
+		if entry.(*sampleEntity).Status == 9 {
+			t.Error("a status the filter excluded came back")
+		}
+	}
+}
+
+func TestPostgresFilterWithIn(t *testing.T) {
+	repo := newTestRepository(t)
+	ctx := context.Background()
+
+	for _, status := range []int{1, 5, 9} {
+		entity := sample()
+		entity.Status = status
+		if _, err := repo.Create(ctx, entity); err != nil {
+			t.Fatalf("Create: %v", err)
+		}
+	}
+
+	found, err := repo.Get(ctx, map[string]interface{}{
+		"status": map[string]interface{}{"$in": []int{1, 9}},
+	}, nil, nil)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if len(found) != 2 {
+		t.Errorf("len = %d, want 2", len(found))
+	}
+}
+
+// TestPostgresFilterMixesOperatorsAndValues is the shape the trip service uses:
+// one field matched by value, another by operator.
+func TestPostgresFilterMixesOperatorsAndValues(t *testing.T) {
+	repo := newTestRepository(t)
+	ctx := context.Background()
+
+	wanted := sample()
+	wanted.Name = "wanted"
+	wanted.Status = 5
+	if _, err := repo.Create(ctx, wanted); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	excludedByStatus := sample()
+	excludedByStatus.Name = "wanted"
+	excludedByStatus.Status = 9
+	if _, err := repo.Create(ctx, excludedByStatus); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	excludedByName := sample()
+	excludedByName.Name = "other"
+	excludedByName.Status = 5
+	if _, err := repo.Create(ctx, excludedByName); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	found, err := repo.Get(ctx, map[string]interface{}{
+		"name":   "wanted",
+		"status": map[string]interface{}{"$nin": []int{9}},
+	}, nil, nil)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+
+	if len(found) != 1 {
+		t.Fatalf("len = %d, want 1", len(found))
+	}
+	if entity := found[0].(*sampleEntity); entity.Name != "wanted" || entity.Status != 5 {
+		t.Errorf("got %+v", entity)
+	}
+}
+
+func TestPostgresFilterWithComparison(t *testing.T) {
+	repo := newTestRepository(t)
+	ctx := context.Background()
+
+	for _, status := range []int{1, 5, 9} {
+		entity := sample()
+		entity.Status = status
+		if _, err := repo.Create(ctx, entity); err != nil {
+			t.Fatalf("Create: %v", err)
+		}
+	}
+
+	found, err := repo.Get(ctx, map[string]interface{}{
+		"status": map[string]interface{}{"$gte": 5},
+	}, nil, nil)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if len(found) != 2 {
+		t.Errorf("len = %d, want 2", len(found))
+	}
+}
+
+func TestPostgresFilterWithExists(t *testing.T) {
+	repo := newTestRepository(t)
+	ctx := context.Background()
+
+	withTags := sample()
+	if _, err := repo.Create(ctx, withTags); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	withoutTags := sample()
+	withoutTags.Tags = nil
+	if _, err := repo.Create(ctx, withoutTags); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	found, err := repo.Get(ctx, map[string]interface{}{
+		"tags": map[string]interface{}{"$exists": true},
+	}, nil, nil)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if len(found) != 1 {
+		t.Errorf("len = %d, want 1", len(found))
+	}
+}
+
+// TestPostgresRejectsUnknownOperator keeps an untranslated operator from being
+// dropped. Skipping a condition returns rows the caller asked to exclude, which
+// is worse than failing.
+func TestPostgresRejectsUnknownOperator(t *testing.T) {
+	repo := newTestRepository(t)
+
+	_, err := repo.Get(context.Background(), map[string]interface{}{
+		"name": map[string]interface{}{"$regex": "^a"},
+	}, nil, nil)
+
+	if err == nil {
+		t.Fatal("expected an untranslated operator to fail")
+	}
+}
