@@ -31,7 +31,7 @@ type sampleAddress struct {
 
 const createSampleTable = `
 CREATE TABLE IF NOT EXISTS repository_samples (
-	id     uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+	id     text PRIMARY KEY DEFAULT gen_random_uuid()::text,
 	doc    jsonb NOT NULL,
 	status int GENERATED ALWAYS AS ((doc->>'status')::int) STORED
 );
@@ -566,5 +566,55 @@ func TestPostgresRejectsUnknownOperator(t *testing.T) {
 
 	if err == nil {
 		t.Fatal("expected an untranslated operator to fail")
+	}
+}
+
+// TestPostgresCreateKeepsTheIDTheEntityCarries is the bug this covers: callers
+// generate an id and hand it out before the record exists. A trip is written to
+// Firestore under the id the app knows it by, and the apps poll for it there,
+// so assigning a different one leaves a record nothing can find again — the
+// trip was created, matched and paid for, and every lookup afterwards missed.
+func TestPostgresCreateKeepsTheIDTheEntityCarries(t *testing.T) {
+	repo := newTestRepository(t)
+	ctx := context.Background()
+
+	entity := sample()
+	entity.ID = "654c2c92ec153122642d49ad"
+
+	id, err := repo.Create(ctx, entity)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	if id != entity.ID {
+		t.Fatalf("Create returned %q, want the id the entity carried, %q", id, entity.ID)
+	}
+
+	got, err := repo.GetByID(ctx, entity.ID)
+	if err != nil {
+		t.Fatalf("GetByID with the id the caller knows: %v", err)
+	}
+	if got.(*sampleEntity).ID != entity.ID {
+		t.Errorf("read back %q, want %q", got.(*sampleEntity).ID, entity.ID)
+	}
+}
+
+// TestPostgresCreateAssignsAnIDWhenTheEntityHasNone keeps the other half: an
+// entity that leaves the id empty gets one from the database.
+func TestPostgresCreateAssignsAnIDWhenTheEntityHasNone(t *testing.T) {
+	repo := newTestRepository(t)
+	ctx := context.Background()
+
+	id, err := repo.Create(ctx, sample())
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	if id == "" {
+		t.Fatal("Create returned an empty id")
+	}
+
+	if _, err := repo.GetByID(ctx, id); err != nil {
+		t.Fatalf("GetByID with the assigned id: %v", err)
 	}
 }

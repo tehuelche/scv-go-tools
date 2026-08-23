@@ -11,6 +11,7 @@ import (
 
 	"github.com/tehuelche/scv-go-tools/v3/wrappers"
 	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
 // Create inserts an entity and returns its id.
@@ -26,8 +27,14 @@ func (r *PostgresRepository) Create(ctx context.Context, entity interface{}) (st
 		return "", err
 	}
 
-	// The id is assigned by the database when the entity does not carry one,
-	// which is how the Mongo repository behaves.
+	// An entity that carries an id keeps it. Callers generate one and hand it
+	// out before the record exists — a trip is written to Firestore under the
+	// id the app knows it by, and the apps poll for it there — so assigning a
+	// different one leaves a record nothing can find again.
+	//
+	// This is what the Mongo repository does: an _id on the entity is the id of
+	// the document. Only an entity without one gets a key from the database.
+	id, carried := documentID(document)
 	delete(document, "_id")
 
 	payload, err := bson.MarshalExtJSON(document, false, false)
@@ -35,7 +42,14 @@ func (r *PostgresRepository) Create(ctx context.Context, entity interface{}) (st
 		return "", err
 	}
 
-	var id string
+	if carried {
+		query := fmt.Sprintf("INSERT INTO %s (id, doc) VALUES ($1, $2) RETURNING id", r.table())
+		if err := r.DB.QueryRowContext(ctx, query, id, payload).Scan(&id); err != nil {
+			return "", err
+		}
+		return id, nil
+	}
+
 	query := fmt.Sprintf("INSERT INTO %s (doc) VALUES ($1) RETURNING id", r.table())
 	if err := r.DB.QueryRowContext(ctx, query, payload).Scan(&id); err != nil {
 		return "", err
@@ -389,4 +403,34 @@ func quoteLiteral(value string) string {
 // quoteIdentifier quotes an identifier so a table name cannot be read as SQL.
 func quoteIdentifier(identifier string) string {
 	return `"` + strings.ReplaceAll(identifier, `"`, `""`) + `"`
+}
+
+// documentID reads the id an entity carries, if it carries one.
+//
+// An empty value counts as none: entities tag their id omitempty, and a zero id
+// means the caller left it to the database rather than asking for that key.
+func documentID(document map[string]interface{}) (string, bool) {
+	raw, ok := document["_id"]
+	if !ok || raw == nil {
+		return "", false
+	}
+
+	// The id arrives as an ObjectID when the entity types it that way, and as a
+	// string when it does not — PostgreSQL keys rows by text and takes either.
+	switch value := raw.(type) {
+	case primitive.ObjectID:
+		if value.IsZero() {
+			return "", false
+		}
+		return value.Hex(), true
+
+	case string:
+		if value == "" {
+			return "", false
+		}
+		return value, true
+
+	default:
+		return "", false
+	}
 }
