@@ -44,6 +44,12 @@ type MongoRepository struct {
 func (r *MongoRepository) Create(ctx context.Context, entity interface{}) (string, error) {
 	result, err := r.Collection.InsertOne(ctx, entity)
 	if err != nil {
+		// A unique index rejecting the write is an answer, not a breakdown: the
+		// record is already there. Callers used to tell by looking for "E11000"
+		// in the message, which tied them to this driver.
+		if mongo.IsDuplicateKeyError(err) {
+			return "", wrappers.NewAlreadyExistsErr(err)
+		}
 		return "", err
 	}
 	return result.InsertedID.(primitive.ObjectID).Hex(), nil

@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/lib/pq"
 	"github.com/tehuelche/scv-go-tools/v3/wrappers"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
@@ -45,14 +46,14 @@ func (r *PostgresRepository) Create(ctx context.Context, entity interface{}) (st
 	if carried {
 		query := fmt.Sprintf("INSERT INTO %s (id, doc) VALUES ($1, $2) RETURNING id", r.table())
 		if err := r.DB.QueryRowContext(ctx, query, id, payload).Scan(&id); err != nil {
-			return "", err
+			return "", translateWriteErr(err)
 		}
 		return id, nil
 	}
 
 	query := fmt.Sprintf("INSERT INTO %s (doc) VALUES ($1) RETURNING id", r.table())
 	if err := r.DB.QueryRowContext(ctx, query, payload).Scan(&id); err != nil {
-		return "", err
+		return "", translateWriteErr(err)
 	}
 
 	return id, nil
@@ -434,3 +435,26 @@ func documentID(document map[string]interface{}) (string, bool) {
 		return "", false
 	}
 }
+
+// translateWriteErr says what a rejected write means in terms the callers share
+// with the other adapters.
+//
+// PostgreSQL reports a unique violation as SQLSTATE 23505 and MongoDB reports
+// the same situation as E11000. A caller that has to know both is a caller
+// tied to whichever one it happens to run on today.
+func translateWriteErr(err error) error {
+	if err == nil {
+		return nil
+	}
+
+	var pgErr *pq.Error
+	if errors.As(err, &pgErr) && pgErr.Code == uniqueViolation {
+		return wrappers.NewAlreadyExistsErr(err)
+	}
+
+	return err
+}
+
+// uniqueViolation is the SQLSTATE PostgreSQL reports when a unique index or
+// primary key rejects a write.
+const uniqueViolation = "23505"
